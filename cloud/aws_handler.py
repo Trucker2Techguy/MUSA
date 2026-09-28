@@ -9,6 +9,17 @@ def _dynamo(value):
     return json.loads(json.dumps(value), parse_float=Decimal)
 
 
+def _native(value):
+    # boto3 returns DynamoDB numbers as Decimal, including nested maze cells.
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    if isinstance(value, list):
+        return [_native(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _native(item) for key, item in value.items()}
+    return value
+
+
 class DynamoStore:
     def __init__(self):
         import boto3
@@ -19,7 +30,8 @@ class DynamoStore:
         self.ClientError = ClientError
 
     def get_room(self, code):
-        return self.rooms.get_item(Key={'roomCode': code}, ConsistentRead=True).get('Item')
+        item = self.rooms.get_item(Key={'roomCode': code}, ConsistentRead=True).get('Item')
+        return _native(item)
 
     def create_room(self, item):
         try:
