@@ -5,7 +5,6 @@ A two-player cooperative procedural maze. This prototype uses Python's standard 
 ## Run
 
 ```bash
-cd musa-prototype
 python3 server.py
 ```
 
@@ -25,3 +24,7 @@ Run rules tests with `python3 -m unittest discover -s tests -v`.
 ## Prototype boundary
 
 State is held in server memory and browsers poll for updates every 850 ms. Restarting the server ends rooms. This deliberately proves the rules, hidden-data boundary, and local two-client interaction before replacing room storage and transport with DynamoDB and WebSockets. The browser is sent discovered cells and discovered landmarks only. Room credentials persist in each browser's local storage for refresh/reconnect while the local process runs.
+
+## Serverless phase (source only)
+
+The WebSocket/Lambda/DynamoDB implementation and proposed SAM template live in `cloud/`, `static/realtime.js`, and `infra/template.yaml`. Local mode still works as before. See [Phase 2 design and deployment review](docs/PHASE2.md) for protocol, data model, expiry, and deployment sequence. No AWS resources have been created.
