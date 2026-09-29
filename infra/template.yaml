@@ -1,0 +1,230 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: M.U.S.A. two-player serverless game
+Parameters:
+  HostedZoneId:
+    Type: String
+    Description: Existing Route 53 hosted zone ID for jaimebsnyder.com
+  CertificateArn:
+    Type: String
+    Description: Existing us-east-1 ACM certificate covering musa.jaimebsnyder.com
+  SiteDomain:
+    Type: String
+    Default: musa.jaimebsnyder.com
+  CreateDns:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+Conditions:
+  PublishDns: !Equals [!Ref CreateDns, 'true']
+Resources:
+  RoomsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: musa-rooms
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: roomCode, AttributeType: S}]
+      KeySchema: [{AttributeName: roomCode, KeyType: HASH}]
+      TimeToLiveSpecification: {AttributeName: expiresAt, Enabled: true}
+      Tags: [{Key: Project, Value: MUSA}]
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: musa-connections
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: connectionId, AttributeType: S}]
+      KeySchema: [{AttributeName: connectionId, KeyType: HASH}]
+      TimeToLiveSpecification: {AttributeName: expiresAt, Enabled: true}
+      Tags: [{Key: Project, Value: MUSA}]
+  GameLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/musa-game-handler
+      RetentionInDays: 7
+  GameRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: musa-game-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: 'sts:AssumeRole'}]
+      Policies:
+        - PolicyName: musa-game-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['dynamodb:GetItem', 'dynamodb:PutItem']
+                Resource: [!GetAtt RoomsTable.Arn, !GetAtt ConnectionsTable.Arn]
+              - Effect: Allow
+                Action: 'dynamodb:DeleteItem'
+                Resource: !GetAtt ConnectionsTable.Arn
+              - Effect: Allow
+                Action: ['logs:CreateLogStream', 'logs:PutLogEvents']
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/musa-game-handler:*'
+              - Effect: Allow
+                Action: 'execute-api:ManageConnections'
+                Resource: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${SocketApi}/prod/POST/@connections/*'
+  GameFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: GameLogs
+    Properties:
+      FunctionName: musa-game-handler
+      CodeUri: ../
+      Handler: cloud.aws_handler.handler
+      Runtime: python3.12
+      Architectures: [arm64]
+      Timeout: 10
+      MemorySize: 256
+      Role: !GetAtt GameRole.Arn
+      Environment:
+        Variables:
+          ROOMS_TABLE: !Ref RoomsTable
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+          ALLOWED_ORIGINS: !Join [',', [!Sub 'https://${SiteDomain}', !Sub 'https://${FrontendDistribution.DomainName}']]
+      Tags: {Project: MUSA}
+  SocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: musa-live-api
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: '$request.body.action'
+  SocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref SocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationMethod: POST
+      IntegrationUri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GameFunction.Arn}/invocations'
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref SocketApi, RouteKey: '$connect', AuthorizationType: NONE, Target: !Sub 'integrations/${SocketIntegration}'}
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref SocketApi, RouteKey: '$disconnect', AuthorizationType: NONE, Target: !Sub 'integrations/${SocketIntegration}'}
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref SocketApi, RouteKey: '$default', AuthorizationType: NONE, Target: !Sub 'integrations/${SocketIntegration}'}
+  CreateRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref SocketApi, RouteKey: create, AuthorizationType: NONE, Target: !Sub 'integrations/${SocketIntegration}'}
+  JoinRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref SocketApi, RouteKey: join, AuthorizationType: NONE, Target: !Sub 'integrations/${SocketIntegration}'}
+  ResumeRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref SocketApi, RouteKey: resume, AuthorizationType: NONE, Target: !Sub 'integrations/${SocketIntegration}'}
+  StartRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref SocketApi, RouteKey: start, AuthorizationType: NONE, Target: !Sub 'integrations/${SocketIntegration}'}
+  CommandRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref SocketApi, RouteKey: command, AuthorizationType: NONE, Target: !Sub 'integrations/${SocketIntegration}'}
+  ReplayRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref SocketApi, RouteKey: replay, AuthorizationType: NONE, Target: !Sub 'integrations/${SocketIntegration}'}
+  SnapshotRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref SocketApi, RouteKey: snapshot, AuthorizationType: NONE, Target: !Sub 'integrations/${SocketIntegration}'}
+  PingRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref SocketApi, RouteKey: ping, AuthorizationType: NONE, Target: !Sub 'integrations/${SocketIntegration}'}
+  SocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref SocketApi
+      StageName: prod
+      AutoDeploy: true
+      DefaultRouteSettings: {ThrottlingBurstLimit: 50, ThrottlingRateLimit: 25}
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref GameFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${SocketApi}/*'
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub 'musa-frontend-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration: {BlockPublicAcls: true, IgnorePublicAcls: true, BlockPublicPolicy: true, RestrictPublicBuckets: true}
+      OwnershipControls: {Rules: [{ObjectOwnership: BucketOwnerEnforced}]}
+      Tags: [{Key: Project, Value: MUSA}]
+  OriginAccess:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: musa-frontend-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: musa-frontend
+        Enabled: true
+        IPV6Enabled: true
+        DefaultRootObject: index.html
+        Aliases: [!Ref SiteDomain]
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        Origins:
+          - Id: frontend
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !Ref OriginAccess
+            S3OriginConfig: {OriginAccessIdentity: ''}
+        DefaultCacheBehavior:
+          TargetOriginId: frontend
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        PriceClass: PriceClass_100
+      Tags: [{Key: Project, Value: MUSA}]
+  FrontendPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: cloudfront.amazonaws.com}
+            Action: 's3:GetObject'
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}'
+  SiteA:
+    Type: AWS::Route53::RecordSet
+    Condition: PublishDns
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref SiteDomain
+      Type: A
+      AliasTarget: {DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2}
+  SiteAAAA:
+    Type: AWS::Route53::RecordSet
+    Condition: PublishDns
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref SiteDomain
+      Type: AAAA
+      AliasTarget: {DNSName: !GetAtt FrontendDistribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2}
+Outputs:
+  WebSocketUrl:
+    Value: !Sub 'wss://${SocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+  BucketName:
+    Value: !Ref FrontendBucket
+  CloudFrontDomain:
+    Value: !GetAtt FrontendDistribution.DomainName
+  CloudFrontId:
+    Value: !Ref FrontendDistribution
+  SiteUrl:
+    Value: !Sub 'https://${SiteDomain}'
