@@ -1,41 +1,77 @@
-# Build 0.2 deployment review
+# Build 0.2 review — solo and network Tic-Tac-Toe
 
-Status: implemented locally on branch `build-0.2`; no AWS deployment and no GitHub push performed.
+**Review revision: SOLO-VERIFIED-24.** Regenerated from current branch `build-0.2`, implementation commit `aa0b142`, after rerunning the complete test suite. **24 Python tests pass. Nothing pushed or deployed.**
 
-## Changes
+## Verified implementation
 
-- Simulation selector with Relay Recovery, Tic-Tac-Toe, and disabled Global Thermonuclear War with the requested WOPR authorization message.
-- Mode selection after Tic-Tac-Toe: `1 PLAYER / VS COMPUTER` and `2 PLAYER / NETWORK`.
-- Dedicated `tictactoe.py` with backend turn, square, win, draw, and completion validation.
-- Solo mode starts immediately; the human is X and M.U.S.A. is O. Deterministic backend minimax chooses optimal legal moves without external services. Both modes use the same rules, snapshot format, and renderer.
-- `mode` is persisted in Tic-Tac-Toe rooms/snapshots; missing mode defaults to `network`. The computer has no usable session token or socket. Room join is rejected for solo games. Human and computer moves save atomically in one service mutation, preserving duplicate suppression and conflict retry.
-- Solo resume restores the human session and board. Solo replay retains the human credentials and mode and starts a fresh match immediately; network replay retains the existing lobby/start flow.
-- `gameType` in room persistence and snapshots; absent room types decode as `maze`.
-- Shared cloud service dispatches room creation, decoding, commands, and replay to the correct game. Joining derives the game from the room. Existing player identities, hashed tokens, connections, version checks, request deduplication, and broadcasts remain in use.
-- Both HTTP development and WebSocket production clients render Tic-Tac-Toe while preserving the existing maze canvas renderer. Tic-Tac-Toe uses accessible square buttons and highlights winning lines.
-- README describes the existing AWS architecture accurately and labels Build 0.2 as pending deployment.
-- Frontend publishing invalidates both client scripts and CSS as well as existing HTML/config paths.
+Selecting `02 / TIC-TAC-TOE` shows:
 
-## Validation
+- `1 PLAYER / VS COMPUTER`
+- `2 PLAYER / NETWORK`
 
-- 24 Python unittest cases pass (10 original, 7 network Tic-Tac-Toe, and 7 computer-mode cases).
-- Maze generation/reachability, visibility, relay activation, and cooperative extraction regressions pass.
-- Tic-Tac-Toe validates every winning line for both players, draws, invalid inputs, turns, occupied squares, start/session restrictions, and post-completion rejection.
-- Solo tests verify deterministic/legal computer moves, immediate wins, blocking losses, turn ownership, invalid moves, no extra computer move after a human win or final draw, and every reachable human strategy against the optimal opponent. Both computer wins and draws are reachable; human wins are impossible against optimal play. Rules still correctly terminate on a human winning board.
-- Service integration covers shared broadcasts, simulated conditional-write conflict, duplicate requests, authenticated resume for both players, stale disconnect protection, winning/draw replay, preserved connections and credentials, and legacy maze decoding. Solo integration additionally covers conflict retries, duplicate human commands, join rejection, resume, replay, and an unbound computer slot.
-- JavaScript VM tests pass: saved-session startup/resume/new session; selected game creation payload; room-derived Tic-Tac-Toe rendering; square command payload; draw replay; joining without a game selection payload; mode-selection visibility, solo creation payload, no join requirement, and the shared solo renderer.
-- Real local HTTP API smoke passes: solo creation, human/computer move, completion and replay; network creation/join; default maze creation.
-- Both JavaScript syntax checks pass. `git diff --check` passes.
-- Browser visual/end-to-end checks remain unverified: Playwright is installed but Chromium is absent; attempted browser downloads returned invalid/truncated archives. No live AWS gameplay tests were run.
+Solo starts immediately with human X and M.U.S.A. O. It needs one browser and no second-player join. Deterministic optimal minimax runs in `tictactoe.py` on the backend; there is no external AI service or LLM. The same room class, move validator, win/draw evaluator, snapshot format, and board renderer serve both modes.
 
-## Production impact and release order
+The backend applies a legal human move and, unless the game has ended, an optimal computer response before saving the room. Conditional-write retries recompute from authoritative state; duplicate request IDs return state without applying either move again. Computer moves cannot be submitted by a human as Player 2. The virtual computer has no usable session token or socket, and solo room joining is rejected.
 
-No AWS resource template changes, new resources, DynamoDB migrations, or room deletions are required. Maze engine behavior is unchanged except for the additive snapshot game type. Existing maze rooms without the field remain readable; default creation without a type remains a maze, allowing existing clients to continue operating.
+Solo resume restores the human identity, board, mode, and outcome. Replay preserves credentials and computer mode and starts a fresh match immediately. Network mode retains Player 1/X and Player 2/O, host initialization, authoritative turn validation, broadcasts to both clients, and lobby-based host replay.
 
-Deploy the updated Lambda first, including `tictactoe.py`. Publishing the new frontend first would expose Tic-Tac-Toe controls to a backend that cannot handle them. Then publish the frontend and invalidate all modified asset paths. Verify existing maze resume and a full maze game, plus a two-client Tic-Tac-Toe match, draw, replay, refresh and socket reconnect, and a single-browser computer game with resume and replay before declaring the release deployed.
+## Evidence from the current branch
 
-Rolling back Lambda to Build 0.1 after Tic-Tac-Toe rooms exist would make those rooms unreadable. A frontend-only rollback retains backend support for existing rooms. Save the prior Lambda package and frontend for a coordinated rollback, and account for active Tic-Tac-Toe rooms before reverting the backend.
+| Requirement | Implementation |
+| --- | --- |
+| Mode-selection screen | `static/index.html`; mode handlers in both `static/app.js` and `static/realtime.js`. |
+| Solo start with no join | `TicTacToeRoom.join` creates the computer slot and initializes immediately; solo frontend hides join controls. |
+| Deterministic optimal computer | Cached `minimax` and `computer_square` in `tictactoe.py`; stable lowest-square tie break. |
+| Shared rules and renderer | Both modes call `_move` and use the same board snapshots and square buttons. |
+| Persisted mode | `cloud/codec.py` saves `mode`; absent mode defaults to `network`. |
+| Production request dispatch | `cloud/aws_handler.py` forwards creation mode; `cloud/service.py` uses the same room/session/mutation infrastructure. |
+| Resume/replay | Shared authenticated resume; mode-preserving replay in cloud service and local server. |
+| Maze backward compatibility | Missing `gameType` defaults to `maze`; maze rules remain unchanged apart from additive snapshot type. |
 
-AWS CLI is not installed in this environment and authenticated AWS deployment access has not been established. Approval alone does not establish access; use the existing authorized deployment environment or provide an appropriate deployment connection. Never share AWS secret keys in chat.
+## Fresh test results
 
-Deployment is explicitly gated on the user's approval. After live verification, update the README release status to describe Build 0.2 as deployed.
+Commands rerun for this review:
+
+```bash
+python3 -m unittest discover -s tests -v
+node tests/test_saved_session.cjs
+node --check static/app.js
+node --check static/realtime.js
+git diff --check
+```
+
+| Suite | Result | Coverage |
+| --- | --- | --- |
+| Original Python regressions | 10 passed | Maze reachability, hidden state, cooperative objectives/extraction, cloud persistence/retry/resume/expiry, Decimal handling, mocked frontend publishing. |
+| Network Tic-Tac-Toe Python tests | 7 passed | Both players and every winning line, draws, turns/occupied squares/invalid inputs, start/session validation, legacy maze decoding, broadcasts, request deduplication, conflict retry, reconnect, replay. |
+| Computer-mode Python tests | 7 passed | Immediate solo start, bot identity protection, join rejection, deterministic legal moves, win/block choices, turn handling, human win/final draw termination, exhaustive reachable human strategies, codec defaults, cloud resume/replay and conflict/duplicate retry. |
+| Total Python | **24 passed** | Full discovery suite; no skipped or failing cases. |
+| JavaScript VM regressions | Passed | Saved-session startup/resume/new session, game/mode selection, solo payload/no join requirement/shared rendering, room-derived network game, square payload, draw replay. |
+| Both JavaScript syntax checks | Passed | HTTP and WebSocket clients. |
+| Diff whitespace check | Passed | No whitespace errors. |
+
+The exhaustive solo test follows every legal human choice against the deterministic opponent and confirms the computer never loses; both computer wins and draws occur. Human-win handling is checked using a constructed board because optimal computer play cannot reach a human win.
+
+A local HTTP API smoke previously passed solo create/move/completion/replay, network create/join, and default maze creation. Browser visual/end-to-end testing remains **unverified**: Chromium download attempts failed. No Build 0.2 live AWS gameplay tests have been run. Automated checks establish the implemented behavior within these limits, not a completed production release.
+
+## Production impact
+
+No AWS resource-template changes, new resources, table migrations, room deletions, or additional APIs are required. Both Tic-Tac-Toe modes reuse API Gateway WebSocket, Lambda, DynamoDB, existing codes, session tokens, and reconnect handling. Maze rooms without `gameType` remain readable. Older clients creating rooms without type still get a maze.
+
+The selector includes the existing Relay Recovery and disabled Global Thermonuclear War entry displaying `ACCESS RESTRICTED // WOPR AUTHORIZATION REQUIRED`. The retro CRT style remains in use.
+
+## Release gate and order
+
+**Do not deploy or push yet. User review and explicit deployment approval are required.**
+
+After approval and authorized AWS access:
+
+1. Preserve the prior backend package and frontend for rollback.
+2. Update the existing Lambda first, including `tictactoe.py`, `game.py`, and `cloud/`. Publishing the frontend first would expose controls the old backend cannot handle.
+3. Publish the frontend to the existing S3 bucket. The publisher invalidates HTML, config, both client scripts, and CSS and waits for CloudFront completion.
+4. Verify a single-browser computer game, draw/win, refresh/resume, and replay; a two-client network game and reconnect/replay; and an existing maze-room resume plus maze gameplay.
+5. Mark the README deployed only after live verification succeeds.
+
+A backend rollback to Build 0.1 cannot decode Tic-Tac-Toe rooms. A frontend-only rollback retains backend support for existing sessions. Account for active Tic-Tac-Toe rooms before reverting the backend.
+
+AWS CLI is absent and authenticated AWS deployment access has not been established in this workspace. No deployment operation was attempted during this review.

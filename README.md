@@ -1,28 +1,43 @@
 # M.U.S.A. — Multi-User Simulation Architecture
 
-A browser simulation platform with solo and two-player games with a green CRT/WOPR interface.
+A green CRT/WOPR browser simulation platform supporting solo and network play.
+
+**Build 0.2 review revision: SOLO-VERIFIED-24.** Generated from branch `build-0.2`, implementation commit `aa0b142`. The full suite was rerun for this review: **24 Python tests passed**, JavaScript regressions passed, and both client syntax checks passed. Nothing has been pushed or deployed.
 
 Live site: https://musa.jaimebsnyder.com/
 
-**Release status:** Build 0.2 is prepared for review, pending deployment approval. The live deployment remains Build 0.1 (Relay Recovery). Do not interpret the new game below as deployed yet.
+Build 0.2 is a local release candidate. The existing AWS deployment remains Relay Recovery; this document does not claim that Tic-Tac-Toe is live.
 
 ## Simulations
 
-- **01 / Relay Recovery:** existing cooperative procedural maze. Both players share fog-of-war discovery, activate their assigned relays, and reach extraction together. Interference delays movement for three seconds.
-- **02 / Tic-Tac-Toe (Build 0.2):** choose **1 PLAYER / VS COMPUTER** or **2 PLAYER / NETWORK**. Solo mode starts immediately with the human as X and M.U.S.A. as O, with no second browser or join required. M.U.S.A. uses deterministic optimal minimax on the backend, with no external AI service. Network mode preserves competitive two-player play: Player 1 is X; Player 2 is O. X starts. The backend validates turns and squares and determines wins and draws. The human/host can create another match after completion; solo replay starts immediately.
-- **03 / Global Thermonuclear War:** disabled; `ACCESS RESTRICTED // WOPR AUTHORIZATION REQUIRED`.
+| Selection | Behavior |
+| --- | --- |
+| 01 / RELAY RECOVERY | Existing two-player cooperative procedural maze. Shared fog-of-war discovery, assigned relays, joint extraction, and three-second interference delays. |
+| 02 / TIC-TAC-TOE | Shows the mode-selection screen below. |
+| 03 / GLOBAL THERMONUCLEAR WAR | Disabled: `ACCESS RESTRICTED // WOPR AUTHORIZATION REQUIRED`. |
 
-The creator selects the simulation and, for Tic-Tac-Toe, the mode. A joining player needs only the room code and automatically receives the room's game type. Resume uses the existing saved player credentials for either game.
+### Tic-Tac-Toe modes
 
-## Deployed AWS architecture
+| Mode | Players and start | Authority | Resume and replay |
+| --- | --- | --- | --- |
+| 1 PLAYER / VS COMPUTER | Human X versus M.U.S.A. O. Starts immediately when created; no second browser or room join required. | Backend validates the human move, computes an optimal deterministic minimax response, and saves both moves together. No LLM or external AI service. | Existing human session restores the board; replay starts a fresh solo match immediately. |
+| 2 PLAYER / NETWORK | Player 1 is X; Player 2 is O. Host starts after both join; X moves first. | Backend validates turns, occupied squares, wins, and draws and broadcasts snapshots to both clients. | Existing player tokens restore identities; host replay returns to a lobby for another match. |
 
-The existing deployment uses a private S3 frontend bucket behind CloudFront with Origin Access Control, an API Gateway WebSocket API, a Python Lambda handler, and two DynamoDB tables (`musa-rooms` and `musa-connections`). Route 53 provides the custom domain; an existing us-east-1 ACM certificate supplies TLS. The template uses Python 3.12 on arm64. Build 0.2 requires no new AWS resources or template changes.
+Both modes use `TicTacToeRoom` in `tictactoe.py`, the same move validation and win/draw rules, and the same frontend board renderer. Three matching marks in a row, column, or diagonal win. A full board without a winner is a draw. Optimal computer play can win or draw, but cannot lose.
 
-Browsers send actions over WebSocket. Lambda loads authoritative room state, applies game rules, conditionally saves against the room version, and broadcasts player snapshots. Rooms use five-character codes. Random player session tokens are stored as SHA-256 hashes in DynamoDB; snapshots never expose tokens or the hidden maze. Origin validation is an abuse guard, not player authentication.
+Network joiners enter only a room code and callsign; the room determines the simulation and mode. Solo rooms reject joins. The computer slot has no usable session token or WebSocket connection.
 
-Rooms and snapshots carry `gameType` (`maze` or `tictactoe`). Missing stored room types default to `maze`, preserving existing rooms. Maze rules stay in `game.py`; Tic-Tac-Toe rules live in `tictactoe.py`. The codec selects the matching room implementation. Tic-Tac-Toe rooms and snapshots also carry `mode` (`network` or `computer`), defaulting to `network` for older Tic-Tac-Toe rooms. Solo rooms retain a human session and a non-authenticatable computer slot with no WebSocket binding. Each human move and optimal computer response are saved as one versioned room mutation. Both games share session binding, optimistic concurrency, retries, and the last 32 request IDs per player for duplicate suppression.
+## AWS architecture
 
-Lobby and completed rooms expire after 30 minutes; active rooms expire after two hours without a successful mutation. DynamoDB TTL performs eventual cleanup, while the service enforces expiry immediately. Disconnects preserve player slots for authenticated resume. Heartbeats maintain the socket without extending room lifetime.
+The existing AWS stack uses private S3 behind CloudFront with Origin Access Control, API Gateway WebSocket, Python Lambda, and two DynamoDB tables: `musa-rooms` and `musa-connections`. Route 53 supplies the custom domain and an existing us-east-1 ACM certificate supplies TLS. `infra/template.yaml` specifies Python 3.12 on arm64.
+
+Build 0.2 reuses this infrastructure with no resource-template changes or new AWS resources. Browsers submit actions; Lambda applies authoritative rules, conditionally saves against the room version, and sends player snapshots. Solo minimax runs inside that same Lambda request.
+
+Rooms and snapshots carry `gameType` (`maze` or `tictactoe`); stored rooms without it default to `maze`. Tic-Tac-Toe rooms and snapshots also carry `mode` (`network` or `computer`); older Tic-Tac-Toe rooms without mode default to `network`. Creating a room without a game type still creates a maze.
+
+Room codes have five characters. Random human session tokens are stored as SHA-256 hashes in DynamoDB. Snapshots expose neither tokens nor unrevealed maze state. Shared service behavior includes token-based resume, replacement socket bindings, optimistic conflict retry, and the last 32 request IDs per player for duplicate suppression. Each solo command applies the human move and any computer response before one conditional room save; a repeated request ID does not produce additional moves. The move counter counts individual X/O placements.
+
+Lobby and completed rooms expire after 30 minutes. Active rooms expire after two hours without a successful mutation. The service enforces expiry while DynamoDB TTL performs eventual cleanup. Heartbeats maintain the socket without extending room lifetime. Origin checks are an abuse guard rather than player authentication.
 
 ## Local development
 
@@ -30,27 +45,32 @@ Lobby and completed rooms expire after 30 minutes; active rooms expire after two
 python3 server.py --port 8000
 ```
 
-Open http://localhost:8000 in two browser profiles. `static/config.js` selects the local HTTP polling client by default. Production builds inject the existing WebSocket endpoint and use `static/realtime.js`. The local server stores rooms in memory and is a development tool, not the production backend.
+Open http://localhost:8000 in one browser for computer mode or two browser profiles for network games. The local server stores rooms in memory and uses the HTTP polling client (`static/app.js`). Production builds inject the existing WebSocket URL and load `static/realtime.js`. Local in-memory rooms do not survive server restarts; AWS rooms persist in DynamoDB until expiry.
 
-## Validation
+## Verified tests
 
 ```bash
 python3 -m unittest discover -s tests -v
 node tests/test_saved_session.cjs
 node --check static/app.js
 node --check static/realtime.js
+git diff --check
 ```
 
-Tests cover maze reachability and hidden state, cooperative extraction, persistence, legacy rooms, Tic-Tac-Toe wins/draws/input validation, exhaustive reachable solo strategies proving the computer never loses, legal/deterministic computer moves, solo start/resume/replay, duplicate commands, conflict retry, broadcasts, token resume, replay, and frontend publishing with a mocked AWS CLI.
+The fresh run passed **24 Python test cases**: 10 original regressions, 7 network Tic-Tac-Toe cases, and 7 computer-mode cases. Coverage includes legal deterministic computer moves, win/block choices, turn rejection, terminal wins/draws, solo join rejection, persisted mode, resume/replay, duplicate-command and conflict handling, every reachable human strategy against the computer, and unchanged maze/network behavior.
 
-## Release procedure
+JavaScript VM regressions verify mode selection, solo creation payload, hiding room join for solo mode, shared rendering, network joining, square commands, and saved-session behavior. A local HTTP smoke previously passed solo creation/moves/completion/replay, network creation/join, and default maze creation.
 
-Deployment requires explicit approval. Review `docs/BUILD_0_2_REVIEW.md` first. Update the existing Lambda before publishing the frontend. Include `game.py`, `tictactoe.py`, and `cloud/` in the Lambda package. Retain the current WebSocket URL and AWS resource identities.
+Browser visual/end-to-end testing remains unverified because Chromium installation failed. No live AWS gameplay verification has been performed for Build 0.2.
 
-After approval, publish using the existing stack outputs:
+## Deployment gate
+
+**Do not deploy or push without explicit approval.** See `docs/BUILD_0_2_REVIEW.md` for the current review. Deploy the backend before the frontend, including `game.py`, `tictactoe.py`, and `cloud/` in the Lambda package. Retain existing AWS resource IDs and the WebSocket endpoint.
+
+After approval, the existing frontend publisher accepts stack outputs:
 
 ```bash
 bash scripts/publish_frontend.sh <WebSocketUrl> <BucketName> <CloudFrontId>
 ```
 
-This builds the frontend, uploads it, sets entrypoint cache metadata, and invalidates HTML, configuration, both clients, and CSS before waiting for invalidation completion. Verify both games with two live clients, including reconnect and legacy maze resume. Update release status above only after live verification succeeds.
+It uploads the frontend, sets entrypoint metadata, and invalidates HTML, configuration, both client scripts, and CSS, then waits for completion. Verify solo play/resume/replay, network play/resume/replay, and existing maze rooms before marking this release deployed. AWS CLI and authenticated deployment access have not been established in this workspace.
