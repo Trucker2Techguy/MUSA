@@ -1,6 +1,6 @@
 # Build 0.2 review — solo and network Tic-Tac-Toe
 
-**Review revision: SOLO-VERIFIED-24.** Regenerated from current branch `build-0.2`, implementation commit `aa0b142`, after rerunning the complete test suite. **24 Python tests pass. Nothing pushed or deployed.**
+**Review revision: MAIN-MENU-VERIFIED-24.** Regenerated from current branch `build-0.2`, the solo implementation plus the verified MAIN MENU navigation change, after rerunning the complete test suite. **24 Python tests pass. Nothing pushed or deployed.**
 
 ## Verified implementation
 
@@ -14,6 +14,12 @@ Solo starts immediately with human X and M.U.S.A. O. It needs one browser and no
 The backend applies a legal human move and, unless the game has ended, an optimal computer response before saving the room. Conditional-write retries recompute from authoritative state; duplicate request IDs return state without applying either move again. Computer moves cannot be submitted by a human as Player 2. The virtual computer has no usable session token or socket, and solo room joining is rejected.
 
 Solo resume restores the human identity, board, mode, and outcome. Replay preserves credentials and computer mode and starts a fresh match immediately. Network mode retains Player 1/X and Player 2/O, host initialization, authoritative turn validation, broadcasts to both clients, and lobby-based host replay.
+
+## Main menu navigation
+
+A global `< MAIN MENU` CRT-style control is available from maze and solo/network Tic-Tac-Toe, including active, lobby, completed, mode-selection, and saved-session screens. It hides the game, clears frontend state and saved credentials, resets selection to the normal maze entry flow, clears room-code input, stops timers, and creates a fresh WebSocket after detaching and closing the old one. HTTP operations are guarded by a session epoch so delayed replies cannot restore abandoned state or clear a newer request's busy flag. Old socket callbacks are guarded by socket identity.
+
+No backend delete/reset/leave request is issued. The existing WebSocket disconnect path clears only the connection binding; room records and player slots remain. Ordinary resume/reconnect is preserved. Choosing MAIN MENU intentionally discards the browser's saved token; it will no longer offer that abandoned session on reload.
 
 ## Evidence from the current branch
 
@@ -35,6 +41,7 @@ Commands rerun for this review:
 ```bash
 python3 -m unittest discover -s tests -v
 node tests/test_saved_session.cjs
+node tests/test_main_menu.cjs
 node --check static/app.js
 node --check static/realtime.js
 git diff --check
@@ -47,6 +54,7 @@ git diff --check
 | Computer-mode Python tests | 7 passed | Immediate solo start, bot identity protection, join rejection, deterministic legal moves, win/block choices, turn handling, human win/final draw termination, exhaustive reachable human strategies, codec defaults, cloud resume/replay and conflict/duplicate retry. |
 | Total Python | **24 passed** | Full discovery suite; no skipped or failing cases. |
 | JavaScript VM regressions | Passed | Saved-session startup/resume/new session, game/mode selection, solo payload/no join requirement/shared rendering, room-derived network game, square payload, draw replay. |
+| MAIN MENU JavaScript regression suite | Passed | Both clients and all game modes; active/lobby/completed screens, pending moves and creation, stale replies and timers, fresh create flow, saved-session resume and abandonment. |
 | Both JavaScript syntax checks | Passed | HTTP and WebSocket clients. |
 | Diff whitespace check | Passed | No whitespace errors. |
 

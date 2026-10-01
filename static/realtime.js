@@ -12,13 +12,15 @@ function send(data){if(socket?.readyState!==WebSocket.OPEN)return false;socket.s
 function openSocket(){
  if(socket && (socket.readyState===WebSocket.CONNECTING||socket.readyState===WebSocket.OPEN))return;
  socket=new WebSocket(window.MUSA_WS_URL);
+ const activeSocket=socket;
  socket.onopen=()=>{
+  if(socket!==activeSocket)return;
   retry=0;$('signal').textContent='SIGNAL NOMINAL';
   if(resumeSelected&&session?.code&&session?.token){awaitingResume=true;send({action:'resume',...session});}
   else if(pending)send(pending);
   clearInterval(heartbeat);heartbeat=setInterval(()=>send({action:'ping'}),4*60*1000);
  };
- socket.onmessage=e=>{let message;try{message=JSON.parse(e.data)}catch{return}
+ socket.onmessage=e=>{if(socket!==activeSocket)return;let message;try{message=JSON.parse(e.data)}catch{return}
   if(message.type==='pong')return;
   if(message.type==='error'){
    if(message.requestId && pending?.requestId && message.requestId!==pending.requestId)return;
@@ -39,6 +41,7 @@ function openSocket(){
   }
  };
  socket.onclose=()=>{
+  if(socket!==activeSocket)return;
   clearInterval(heartbeat);$('signal').textContent='LINK INTERRUPTED';
   if(state)$('message').textContent='> Reconnecting to simulation…';
   if(!session&&pending?.action!=='create'&&pending?.action!=='join')pending=null;
@@ -63,7 +66,8 @@ function draw(){if(!state)return;const w=canvas.width,n=state.size,pad=28,step=(
  const cx=x=>pad+(x+.5)*step,cy=y=>pad+(y+.5)*step;ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='bold 22px Courier New';for(const item of state.landmarks){ctx.fillStyle=item.kind==='hazard'?'#c3b985':item.active?'#70b87a':'#d3ffd8';ctx.fillText(item.kind==='hazard'?'!':item.kind==='exit'?'⊞':`◆`,cx(item.x),cy(item.y));if(item.kind==='relay'){ctx.font='12px Courier New';ctx.fillText(String(item.owner+1),cx(item.x)+11,cy(item.y)+11);ctx.font='bold 22px Courier New'}}state.players.forEach((p,i)=>{if(!cellMap.has(`${p.x},${p.y}`))return;ctx.fillStyle=i===state.you?'#e1ffe6':'#92cda0';ctx.beginPath();ctx.arc(cx(p.x),cy(p.y),step*.31,0,Math.PI*2);ctx.fill();ctx.fillStyle='#07170b';ctx.font='bold 14px Courier New';ctx.fillText(p.facing==='N'?'▲':p.facing==='E'?'▶':p.facing==='S'?'▼':'◀',cx(p.x),cy(p.y)+1)})}
 
 $('resume').onclick=()=>{if(!session)return;resumeSelected=true;$('resume').disabled=true;if(!send({action:'resume',...session}))openSocket();else awaitingResume=true};
-$('new-session').onclick=()=>{session=null;state=null;resumeSelected=false;awaitingResume=false;pending=null;busy=false;localStorage.removeItem('musa-session');$('saved-session').hidden=true;$('entry').hidden=false;$('selection').hidden=false;clearInterval(heartbeat);clearTimeout(reconnectTimer);if(socket){socket.onclose=null;socket.close();socket=null}openSocket()};
+$('new-session').onclick=mainMenu;
+$('main-menu').onclick=mainMenu;
 $('create').onclick=()=>createOrJoin('create');$('join').onclick=()=>createOrJoin('join');
 $('start').onclick=()=>act('start');$('replay').onclick=()=>act('replay');
 $('copy').onclick=async()=>{try{await navigator.clipboard.writeText(state.code);alertUser('Room code copied.')}catch{alertUser('Room code: '+state.code)}};
@@ -80,3 +84,15 @@ $('ttt-board').onclick=e=>{const b=e.target.closest('button[data-square]');if(b&
 
 function selectMode(mode){selectedMode=mode;$('mode-selection').hidden=true;$('entry').hidden=false;$('join-entry').hidden=mode==='computer';$('create').textContent=mode==='computer'?'START VS M.U.S.A. ↗':'CREATE NEW ROOM ↗';}
 $('mode-computer').onclick=()=>selectMode('computer');$('mode-network').onclick=()=>selectMode('network');
+
+function mainMenu(){
+ session=null;state=null;pending=null;busy=false;awaitingResume=false;resumeSelected=false;retry=0;
+ localStorage.removeItem('musa-session');
+ clearInterval(heartbeat);clearTimeout(reconnectTimer);clearTimeout(commandTimer);
+ heartbeat=null;reconnectTimer=null;commandTimer=null;
+ if(socket){socket.onopen=null;socket.onmessage=null;socket.onclose=null;socket.onerror=null;socket.close();socket=null}
+ $('game').hidden=true;$('saved-session').hidden=true;$('selection').hidden=false;
+ $('resume').disabled=false;$('code').value='';$('toast').hidden=true;clearTimeout($('toast').timer);
+ selectSimulation('maze');$('select-maze').focus();
+ openSocket();
+}

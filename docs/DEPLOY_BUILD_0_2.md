@@ -48,6 +48,7 @@ git branch --show-current
 git rev-parse HEAD
 python3 -m unittest discover -s tests -v
 node tests/test_saved_session.cjs
+node tests/test_main_menu.cjs
 node --check static/app.js
 node --check static/realtime.js
 bash -n scripts/publish_frontend.sh
@@ -170,6 +171,7 @@ In fresh browser profiles, verify:
 - Solo starts without a partner, X produces a legal O response, outcome locks the board, refresh/resume restores state, and replay starts immediately.
 - Network create/join uses the room type automatically; turns and occupied squares are enforced; both screens agree; win/draw, reconnect, and host replay work.
 - Relay Recovery still creates/joins/plays/resumes and completes extraction. Resume an existing pre-release maze room if one is still valid.
+- MAIN MENU returns to simulation selection from maze and both Tic-Tac-Toe modes; starting another game works without refresh. The abandoned room remains on the backend.
 - War remains disabled. Inspect the browser console and Lambda logs for errors.
 
 Only after successful live verification, update the README's release status to deployed and record the verification. Do not claim live verification based on HTML checks alone.

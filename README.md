@@ -2,7 +2,7 @@
 
 A green CRT/WOPR browser simulation platform supporting solo and network play.
 
-**Build 0.2 review revision: SOLO-VERIFIED-24.** Generated from branch `build-0.2`, implementation commit `aa0b142`. The full suite was rerun for this review: **24 Python tests passed**, JavaScript regressions passed, and both client syntax checks passed. Nothing has been pushed or deployed.
+**Build 0.2 review revision: MAIN-MENU-VERIFIED-24.** Generated from branch `build-0.2`, the solo implementation plus the verified MAIN MENU navigation change. The full suite was rerun for this review: **24 Python tests passed**, JavaScript regressions passed, and both client syntax checks passed. Nothing has been pushed or deployed.
 
 Live site: https://musa.jaimebsnyder.com/
 
@@ -26,6 +26,12 @@ Build 0.2 is a local release candidate. The existing AWS deployment remains Rela
 Both modes use `TicTacToeRoom` in `tictactoe.py`, the same move validation and win/draw rules, and the same frontend board renderer. Three matching marks in a row, column, or diagonal win. A full board without a winner is a draw. Optimal computer play can win or draw, but cannot lose.
 
 Network joiners enter only a room code and callsign; the room determines the simulation and mode. Solo rooms reject joins. The computer slot has no usable session token or WebSocket connection.
+
+## Main menu navigation
+
+`< MAIN MENU` is available above every screen, including Relay Recovery, both Tic-Tac-Toe modes, active games, and the saved-session/mode-selection screens. It returns to top-level simulation selection without refreshing, clears local room credentials and pending actions, stops old polling/retry timers, and closes the old WebSocket. Late HTTP responses and old socket callbacks cannot reopen the abandoned game. Selecting another simulation uses the normal create/join flow on a fresh connection.
+
+Returning to the menu does not delete or reset backend rooms. WebSocket closure follows the existing disconnect behavior, removing only the connection binding while preserving the room and player slot until expiry. Deliberately choosing MAIN MENU abandons this browser's saved resume token; ordinary refresh/reconnect still resumes using saved credentials.
 
 ## AWS architecture
 
@@ -52,6 +58,7 @@ Open http://localhost:8000 in one browser for computer mode or two browser profi
 ```bash
 python3 -m unittest discover -s tests -v
 node tests/test_saved_session.cjs
+node tests/test_main_menu.cjs
 node --check static/app.js
 node --check static/realtime.js
 git diff --check
@@ -59,7 +66,7 @@ git diff --check
 
 The fresh run passed **24 Python test cases**: 10 original regressions, 7 network Tic-Tac-Toe cases, and 7 computer-mode cases. Coverage includes legal deterministic computer moves, win/block choices, turn rejection, terminal wins/draws, solo join rejection, persisted mode, resume/replay, duplicate-command and conflict handling, every reachable human strategy against the computer, and unchanged maze/network behavior.
 
-JavaScript VM regressions verify mode selection, solo creation payload, hiding room join for solo mode, shared rendering, network joining, square commands, and saved-session behavior. A local HTTP smoke previously passed solo creation/moves/completion/replay, network creation/join, and default maze creation.
+Both JavaScript regression suites pass. MAIN MENU tests cover both clients, maze/solo/network, active/lobby/completed screens, cancellation of pending commands/create/resume, stale responses, fresh creation, and saved resume. JavaScript VM regressions also verify mode selection, solo creation payload, hiding room join for solo mode, shared rendering, network joining, square commands, and saved-session behavior. A local HTTP smoke previously passed solo creation/moves/completion/replay, network creation/join, and default maze creation.
 
 Browser visual/end-to-end testing remains unverified because Chromium installation failed. No live AWS gameplay verification has been performed for Build 0.2.
 

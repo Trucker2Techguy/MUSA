@@ -8,7 +8,7 @@ function boot(saved) {
   const element = id => {
     if (!elements.has(id)) elements.set(id, {hidden: id === 'saved-session', value: '', disabled: false,
       getContext: () => ({}), addEventListener() {}, querySelectorAll: () => [],
-      append() {}, setAttribute() {}, replaceChildren() {}, classList: {toggle() {}}, textContent: ''});
+      focus() {}, append() {}, setAttribute() {}, replaceChildren() {}, classList: {toggle() {}}, textContent: ''});
     return elements.get(id);
   };
   const storage = new Map(saved ? [['musa-session', JSON.stringify(saved)]] : []);
