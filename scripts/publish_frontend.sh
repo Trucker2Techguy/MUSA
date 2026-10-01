@@ -15,5 +15,5 @@ aws s3 sync "$project_dir/dist/" "s3://$bucket_name/" --delete
 # Metadata applies even to direct origin reads; invalidate the already-cached paths too.
 aws s3 cp "$project_dir/dist/index.html" "s3://$bucket_name/index.html" --content-type 'text/html; charset=utf-8' --cache-control 'no-store, max-age=0'
 aws s3 cp "$project_dir/dist/config.js" "s3://$bucket_name/config.js" --content-type 'application/javascript; charset=utf-8' --cache-control 'no-store, max-age=0'
-invalidation_id=$(aws cloudfront create-invalidation --distribution-id "$distribution_id" --paths '/' '/index.html' '/config.js' --query 'Invalidation.Id' --output text)
+invalidation_id=$(aws cloudfront create-invalidation --distribution-id "$distribution_id" --paths '/' '/index.html' '/config.js' '/realtime.js' '/app.js' '/style.css' --query 'Invalidation.Id' --output text)
 aws cloudfront wait invalidation-completed --distribution-id "$distribution_id" --id "$invalidation_id"

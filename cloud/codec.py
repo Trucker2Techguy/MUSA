@@ -1,9 +1,20 @@
 """Store authoritative room state as DynamoDB-safe JSON primitives."""
 from game import Player, Room
+from tictactoe import TicTacToeRoom
 
 
 def encode(room, connections=None, recent_ids=None, expires_at=None):
-    return {
+    if isinstance(room, TicTacToeRoom):
+        item = {key: getattr(room, attr) for key, attr in (
+            ('board','board'), ('turn','turn'), ('winner','winner'), ('winningLine','winning_line'),
+            ('phase','phase'), ('version','version'), ('commands','commands'),
+            ('startedAt','started_at'), ('completedAt','completed_at'), ('message','message'), ('lastActive','last_active'))}
+        item.update(roomCode=room.code, gameType='tictactoe',
+                    players=[{'tokenHash': p.token, 'name': p.name} for p in room.players],
+                    connections=list(connections or [None,None]), recentIds=list(recent_ids or [[],[]]),
+                    expiresAt=int(expires_at or 0))
+        return item
+    return {'gameType': 'maze',
         'roomCode': room.code, 'grid': room.grid, 'starts': [list(p) for p in room.starts],
         'relays': [list(p) for p in room.relays], 'exitPoint': list(room.exit_point),
         'hazards': [list(p) for p in sorted(room.hazards)],
@@ -19,6 +30,16 @@ def encode(room, connections=None, recent_ids=None, expires_at=None):
 
 
 def decode(item):
+    if item.get('gameType', 'maze') == 'tictactoe':
+        room = TicTacToeRoom(item['roomCode'])
+        for key, attr in (('board','board'), ('turn','turn'), ('winner','winner'), ('winningLine','winning_line'),
+                          ('phase','phase'), ('version','version'), ('commands','commands'),
+                          ('startedAt','started_at'), ('completedAt','completed_at'), ('message','message'), ('lastActive','last_active')):
+            setattr(room, attr, item[key])
+        room.players = [Player(p['tokenHash'], p['name'], (0,0)) for p in item['players']]
+        return room
+    if item.get('gameType', 'maze') != 'maze':
+        raise ValueError('Unknown simulation.')
     return Room(
         code=item['roomCode'], grid=item['grid'], starts=[tuple(p) for p in item['starts']],
         relays=[tuple(p) for p in item['relays']], exit_point=tuple(item['exitPoint']),

@@ -8,7 +8,7 @@ function boot(saved) {
   const element = id => {
     if (!elements.has(id)) elements.set(id, {hidden: id === 'saved-session', value: '', disabled: false,
       getContext: () => ({}), addEventListener() {}, querySelectorAll: () => [],
-      replaceChildren() {}, classList: {toggle() {}}, textContent: ''});
+      append() {}, setAttribute() {}, replaceChildren() {}, classList: {toggle() {}}, textContent: ''});
     return elements.get(id);
   };
   const storage = new Map(saved ? [['musa-session', JSON.stringify(saved)]] : []);
@@ -22,7 +22,7 @@ function boot(saved) {
     close() { this.readyState = 3; if (this.onclose) this.onclose(); }
     connect() { this.readyState = 1; this.onopen(); }
   }
-  vm.runInNewContext(script, {document: {getElementById: element}, window: {MUSA_WS_URL: 'wss://test', addEventListener() {}},
+  vm.runInNewContext(script, {document: {getElementById: element, createElement: () => ({append() {}, classList: {toggle() {}}})}, window: {MUSA_WS_URL: 'wss://test', addEventListener() {}},
     localStorage: {getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key)},
     WebSocket: Socket, setInterval: () => 1, clearInterval() {}, setTimeout: callback => { timers.push(callback); return timers.length; }, clearTimeout() {}, crypto: {randomUUID: () => 'id'}});
   return {element, storage, sockets, timers};
@@ -51,3 +51,25 @@ assert.deepEqual(fresh.sockets[1].sent, []);
 fresh.element('create').onclick();
 assert.equal(fresh.sockets[1].sent[0].action, 'create');
 console.log('saved-session startup regression passed');
+
+const platform = boot();
+platform.sockets[0].connect();
+platform.element('select-ttt').onclick();
+platform.element('create').onclick();
+assert.equal(platform.sockets[0].sent[0].gameType, 'tictactoe');
+const ttt = {code:'ABCDE',gameType:'tictactoe',phase:'playing',version:3,you:0,
+ board:Array(9).fill(null),turn:0,winner:null,winningLine:[],
+ players:[{name:'A',mark:'X'},{name:'B',mark:'O'}],commands:0,elapsed:0,message:'X to move'};
+platform.sockets[0].onmessage({data:JSON.stringify({type:'session',code:'ABCDE',token:'token',state:ttt})});
+assert.equal(platform.element('map').hidden,true);
+assert.equal(platform.element('ttt-board').hidden,false);
+assert.equal(platform.element('controls').hidden,true);
+assert.equal(platform.element('selection').hidden,true);
+platform.element('ttt-board').onclick({target:{closest:()=>({disabled:false,dataset:{square:'4'}})}});
+assert.equal(platform.sockets[0].sent.at(-1).command,4);
+assert.equal(platform.sockets[0].sent.at(-1).action,'command');
+platform.sockets[0].onmessage({data:JSON.stringify({type:'state',requestId:'id',state:{...ttt,version:4,phase:'draw'}})});
+assert.equal(platform.element('replay').hidden,false);
+const joiner=boot();joiner.sockets[0].connect();joiner.element('join').onclick();
+assert.equal('gameType' in joiner.sockets[0].sent[0],false);
+console.log('simulation selection, room-derived rendering, square command and draw replay regressions passed');

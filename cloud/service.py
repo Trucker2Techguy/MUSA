@@ -3,6 +3,7 @@ import hashlib
 import secrets
 import time
 from game import Room
+from tictactoe import TicTacToeRoom
 from .codec import encode, decode
 
 ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -19,7 +20,7 @@ class Service:
     def _expiry(self, room, now):
         if room.phase == 'lobby':
             return int(now + 1800)
-        if room.phase == 'won':
+        if room.phase in ('won', 'draw'):
             return int(now + 1800)
         return int(now + 7200)
 
@@ -46,12 +47,14 @@ class Service:
         if old and old != connection:
             self.store.remove_connection(old)
 
-    def create(self, connection, name):
+    def create(self, connection, name, game_type="maze"):
+        if game_type not in ("maze", "tictactoe"):
+            raise ValueError("Unknown simulation.")
         if self.store.get_connection(connection):
             raise ValueError('Connection already belongs to a room.')
         for _ in range(8):
             code = ''.join(secrets.choice(ALPHABET) for _ in range(5))
-            room = Room.new(code)
+            room = TicTacToeRoom.new(code) if game_type == "tictactoe" else Room.new(code)
             token = room.join(name)
             room.players[0].token = hashlib.sha256(token.encode()).hexdigest()
             item = encode(room, [connection, None], expires_at=self._expiry(room, self.clock()))
@@ -135,13 +138,14 @@ class Service:
             elif action == 'command':
                 room.command(index, command)
             elif action == 'replay':
-                if index != 0 or room.phase != 'won':
-                    raise ValueError('Host can generate a new maze after a win.')
+                if index != 0 or room.phase not in ('won', 'draw'):
+                    raise ValueError('Host can restart after simulation completion.')
                 old_players = room.players
-                room = Room.new(code)
+                room = TicTacToeRoom.new(code) if isinstance(room, TicTacToeRoom) else Room.new(code)
                 room.players = old_players
-                for i, player in enumerate(room.players):
-                    player.pos, player.facing, player.stunned_until = room.starts[i], 0, 0
+                if isinstance(room, Room):
+                    for i, player in enumerate(room.players):
+                        player.pos, player.facing, player.stunned_until = room.starts[i], 0, 0
                 room.version = item['version'] + 1
                 room.message = 'New simulation ready. Host may initialize.'
             else:

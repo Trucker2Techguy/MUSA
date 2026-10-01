@@ -183,7 +183,7 @@ class Room:
         if self.exit_point in self.revealed:
             landmarks.append({'x': self.exit_point[0], 'y': self.exit_point[1], 'kind': 'exit'})
         landmarks.extend({'x': x, 'y': y, 'kind': 'hazard'} for x, y in self.hazards if (x, y) in self.revealed)
-        return {'code': self.code, 'phase': self.phase, 'version': self.version, 'size': SIZE,
+        return {'code': self.code, 'gameType': 'maze', 'phase': self.phase, 'version': self.version, 'size': SIZE,
                 'you': index, 'players': [{'name': p.name, 'x': p.pos[0], 'y': p.pos[1],
                                            'facing': LABELS[p.facing], 'delay': max(0, round(p.stunned_until-time.time(), 1))}
                                           for p in self.players],

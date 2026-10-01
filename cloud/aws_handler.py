@@ -102,7 +102,7 @@ def handler(event, context):
         if route not in ('$default', action):
             raise ValueError('Invalid route.')
         if action == 'create':
-            service.create(connection, str(data.get('name', ''))[:80])
+            service.create(connection, str(data.get('name', ''))[:80], data.get('gameType', 'maze'))
         elif action == 'join':
             service.join(connection, str(data.get('code', ''))[:12], str(data.get('name', ''))[:80])
         elif action == 'resume':

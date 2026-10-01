@@ -24,7 +24,7 @@ class PublishTests(unittest.TestCase):
                              [['s3', 'sync'], ['s3', 'cp'], ['s3', 'cp'],
                               ['cloudfront', 'create-invalidation'], ['cloudfront', 'wait']])
             self.assertTrue(all('no-store, max-age=0' in line for line in calls[1:3]))
-            self.assertIn('/ /index.html /config.js', calls[3])
+            self.assertIn('/ /index.html /config.js /realtime.js /app.js /style.css', calls[3])
             self.assertIn('--id INV-123', calls[4])
 
 if __name__ == '__main__':

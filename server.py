@@ -8,6 +8,7 @@ import secrets
 import time
 
 from game import Room
+from tictactoe import TicTacToeRoom
 
 ROOT = Path(__file__).parent / 'static'
 ROOMS = {}
@@ -66,7 +67,10 @@ class Handler(SimpleHTTPRequestHandler):
                     code = ''.join(secrets.choice(ALPHABET) for _ in range(5))
                     while code in ROOMS:
                         code = ''.join(secrets.choice(ALPHABET) for _ in range(5))
-                    room = ROOMS[code] = Room.new(code)
+                    game_type = data.get('gameType', 'maze')
+                    if game_type not in ('maze', 'tictactoe'):
+                        raise ValueError('Unknown simulation.')
+                    room = ROOMS[code] = TicTacToeRoom.new(code) if game_type == 'tictactoe' else Room.new(code)
                     token = room.join(str(data.get('name', '')))
                     result = {'token': token, 'state': room.snapshot(0)}
                 elif self.path == '/api/join':
@@ -80,16 +84,17 @@ class Handler(SimpleHTTPRequestHandler):
                     if self.path == '/api/start':
                         room.start(index)
                     elif self.path == '/api/command':
-                        room.command(index, str(data.get('action', '')).upper())
+                        room.command(index, data.get('action') if isinstance(room, TicTacToeRoom) else str(data.get('action', '')).upper())
                     else:
-                        if index != 0 or room.phase != 'won':
+                        if index != 0 or room.phase not in ('won', 'draw'):
                             raise ValueError('Host can generate a new maze after a win.')
-                        replacement = Room.new(room.code)
+                        replacement = TicTacToeRoom.new(room.code) if isinstance(room, TicTacToeRoom) else Room.new(room.code)
                         replacement.players = room.players
-                        for i, player in enumerate(replacement.players):
-                            player.pos = replacement.starts[i]
-                            player.facing = 0
-                            player.stunned_until = 0
+                        if isinstance(replacement, Room):
+                            for i, player in enumerate(replacement.players):
+                                player.pos = replacement.starts[i]
+                                player.facing = 0
+                                player.stunned_until = 0
                         replacement.version = room.version + 1
                         replacement.message = 'New simulation ready. Host may initialize.'
                         ROOMS[room.code] = room = replacement
