@@ -55,6 +55,9 @@ console.log('saved-session startup regression passed');
 const platform = boot();
 platform.sockets[0].connect();
 platform.element('select-ttt').onclick();
+assert.equal(platform.element('mode-selection').hidden,false);
+assert.equal(platform.element('entry').hidden,true);
+platform.element('mode-network').onclick();
 platform.element('create').onclick();
 assert.equal(platform.sockets[0].sent[0].gameType, 'tictactoe');
 const ttt = {code:'ABCDE',gameType:'tictactoe',phase:'playing',version:3,you:0,
@@ -73,3 +76,16 @@ assert.equal(platform.element('replay').hidden,false);
 const joiner=boot();joiner.sockets[0].connect();joiner.element('join').onclick();
 assert.equal('gameType' in joiner.sockets[0].sent[0],false);
 console.log('simulation selection, room-derived rendering, square command and draw replay regressions passed');
+
+const solo=boot();solo.sockets[0].connect();solo.element('select-ttt').onclick();
+solo.element('mode-computer').onclick();
+assert.equal(solo.element('join-entry').hidden,true);
+assert.equal(solo.element('entry').hidden,false);
+solo.element('create').onclick();
+assert.equal(solo.sockets[0].sent[0].mode,'computer');
+solo.sockets[0].onmessage({data:JSON.stringify({type:'session',code:'ABCDE',token:'human',state:{...ttt,mode:'computer'}})});
+assert.equal(solo.element('mode-selection').hidden,true);
+assert.equal(solo.element('ttt-board').hidden,false);
+assert.equal(solo.element('hint').textContent.includes('M.U.S.A.'),true);
+assert.equal(solo.element('start').hidden,true);
+console.log('solo/network mode selection and shared solo renderer regressions passed');

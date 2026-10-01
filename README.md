@@ -1,6 +1,6 @@
 # M.U.S.A. — Multi-User Simulation Architecture
 
-A two-player browser simulation platform with a green CRT/WOPR interface.
+A browser simulation platform with solo and two-player games with a green CRT/WOPR interface.
 
 Live site: https://musa.jaimebsnyder.com/
 
@@ -9,10 +9,10 @@ Live site: https://musa.jaimebsnyder.com/
 ## Simulations
 
 - **01 / Relay Recovery:** existing cooperative procedural maze. Both players share fog-of-war discovery, activate their assigned relays, and reach extraction together. Interference delays movement for three seconds.
-- **02 / Tic-Tac-Toe (Build 0.2):** competitive play. Player 1 is X; Player 2 is O. X starts. The backend validates turns and squares and determines wins and draws. The host can create another match after completion.
+- **02 / Tic-Tac-Toe (Build 0.2):** choose **1 PLAYER / VS COMPUTER** or **2 PLAYER / NETWORK**. Solo mode starts immediately with the human as X and M.U.S.A. as O, with no second browser or join required. M.U.S.A. uses deterministic optimal minimax on the backend, with no external AI service. Network mode preserves competitive two-player play: Player 1 is X; Player 2 is O. X starts. The backend validates turns and squares and determines wins and draws. The human/host can create another match after completion; solo replay starts immediately.
 - **03 / Global Thermonuclear War:** disabled; `ACCESS RESTRICTED // WOPR AUTHORIZATION REQUIRED`.
 
-The creator selects the simulation. A joining player needs only the room code and automatically receives the room's game type. Resume uses the existing saved player credentials for either game.
+The creator selects the simulation and, for Tic-Tac-Toe, the mode. A joining player needs only the room code and automatically receives the room's game type. Resume uses the existing saved player credentials for either game.
 
 ## Deployed AWS architecture
 
@@ -20,7 +20,7 @@ The existing deployment uses a private S3 frontend bucket behind CloudFront with
 
 Browsers send actions over WebSocket. Lambda loads authoritative room state, applies game rules, conditionally saves against the room version, and broadcasts player snapshots. Rooms use five-character codes. Random player session tokens are stored as SHA-256 hashes in DynamoDB; snapshots never expose tokens or the hidden maze. Origin validation is an abuse guard, not player authentication.
 
-Rooms and snapshots carry `gameType` (`maze` or `tictactoe`). Missing stored room types default to `maze`, preserving existing rooms. Maze rules stay in `game.py`; Tic-Tac-Toe rules live in `tictactoe.py`. The codec selects the matching room implementation. Both games share session binding, optimistic concurrency, retries, and the last 32 request IDs per player for duplicate suppression.
+Rooms and snapshots carry `gameType` (`maze` or `tictactoe`). Missing stored room types default to `maze`, preserving existing rooms. Maze rules stay in `game.py`; Tic-Tac-Toe rules live in `tictactoe.py`. The codec selects the matching room implementation. Tic-Tac-Toe rooms and snapshots also carry `mode` (`network` or `computer`), defaulting to `network` for older Tic-Tac-Toe rooms. Solo rooms retain a human session and a non-authenticatable computer slot with no WebSocket binding. Each human move and optimal computer response are saved as one versioned room mutation. Both games share session binding, optimistic concurrency, retries, and the last 32 request IDs per player for duplicate suppression.
 
 Lobby and completed rooms expire after 30 minutes; active rooms expire after two hours without a successful mutation. DynamoDB TTL performs eventual cleanup, while the service enforces expiry immediately. Disconnects preserve player slots for authenticated resume. Heartbeats maintain the socket without extending room lifetime.
 
@@ -41,7 +41,7 @@ node --check static/app.js
 node --check static/realtime.js
 ```
 
-Tests cover maze reachability and hidden state, cooperative extraction, persistence, legacy rooms, Tic-Tac-Toe wins/draws/input validation, duplicate commands, conflict retry, broadcasts, token resume, replay, and frontend publishing with a mocked AWS CLI.
+Tests cover maze reachability and hidden state, cooperative extraction, persistence, legacy rooms, Tic-Tac-Toe wins/draws/input validation, exhaustive reachable solo strategies proving the computer never loses, legal/deterministic computer moves, solo start/resume/replay, duplicate commands, conflict retry, broadcasts, token resume, replay, and frontend publishing with a mocked AWS CLI.
 
 ## Release procedure
 

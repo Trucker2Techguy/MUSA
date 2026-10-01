@@ -47,14 +47,14 @@ class Service:
         if old and old != connection:
             self.store.remove_connection(old)
 
-    def create(self, connection, name, game_type="maze"):
+    def create(self, connection, name, game_type="maze", mode="network"):
         if game_type not in ("maze", "tictactoe"):
             raise ValueError("Unknown simulation.")
         if self.store.get_connection(connection):
             raise ValueError('Connection already belongs to a room.')
         for _ in range(8):
             code = ''.join(secrets.choice(ALPHABET) for _ in range(5))
-            room = TicTacToeRoom.new(code) if game_type == "tictactoe" else Room.new(code)
+            room = TicTacToeRoom.new(code, mode) if game_type == "tictactoe" else Room.new(code)
             token = room.join(name)
             room.players[0].token = hashlib.sha256(token.encode()).hexdigest()
             item = encode(room, [connection, None], expires_at=self._expiry(room, self.clock()))
@@ -97,7 +97,7 @@ class Service:
         for _ in range(8):
             item = self._room(code)
             room = decode(item)
-            index = next((i for i, p in enumerate(room.players) if secrets.compare_digest(p.token, digest)), None)
+            index = next((i for i, p in enumerate(room.players) if p.token and secrets.compare_digest(p.token, digest)), None)
             if index is None:
                 raise ValueError('Session expired or not a member of this room.')
             old = item['connections'][index]
@@ -141,13 +141,15 @@ class Service:
                 if index != 0 or room.phase not in ('won', 'draw'):
                     raise ValueError('Host can restart after simulation completion.')
                 old_players = room.players
-                room = TicTacToeRoom.new(code) if isinstance(room, TicTacToeRoom) else Room.new(code)
+                room = TicTacToeRoom.new(code, room.mode) if isinstance(room, TicTacToeRoom) else Room.new(code)
                 room.players = old_players
                 if isinstance(room, Room):
                     for i, player in enumerate(room.players):
                         player.pos, player.facing, player.stunned_until = room.starts[i], 0, 0
                 room.version = item['version'] + 1
                 room.message = 'New simulation ready. Host may initialize.'
+                if isinstance(room, TicTacToeRoom) and room.mode == 'computer':
+                    room.start(0)
             else:
                 raise ValueError('Unknown action.')
             recent = [ids[:] for ids in item['recentIds']]

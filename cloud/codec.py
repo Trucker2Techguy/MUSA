@@ -9,7 +9,7 @@ def encode(room, connections=None, recent_ids=None, expires_at=None):
             ('board','board'), ('turn','turn'), ('winner','winner'), ('winningLine','winning_line'),
             ('phase','phase'), ('version','version'), ('commands','commands'),
             ('startedAt','started_at'), ('completedAt','completed_at'), ('message','message'), ('lastActive','last_active'))}
-        item.update(roomCode=room.code, gameType='tictactoe',
+        item.update(roomCode=room.code, gameType='tictactoe', mode=room.mode,
                     players=[{'tokenHash': p.token, 'name': p.name} for p in room.players],
                     connections=list(connections or [None,None]), recentIds=list(recent_ids or [[],[]]),
                     expiresAt=int(expires_at or 0))
@@ -31,7 +31,7 @@ def encode(room, connections=None, recent_ids=None, expires_at=None):
 
 def decode(item):
     if item.get('gameType', 'maze') == 'tictactoe':
-        room = TicTacToeRoom(item['roomCode'])
+        room = TicTacToeRoom.new(item['roomCode'], item.get('mode', 'network'))
         for key, attr in (('board','board'), ('turn','turn'), ('winner','winner'), ('winningLine','winning_line'),
                           ('phase','phase'), ('version','version'), ('commands','commands'),
                           ('startedAt','started_at'), ('completedAt','completed_at'), ('message','message'), ('lastActive','last_active')):

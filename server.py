@@ -70,7 +70,7 @@ class Handler(SimpleHTTPRequestHandler):
                     game_type = data.get('gameType', 'maze')
                     if game_type not in ('maze', 'tictactoe'):
                         raise ValueError('Unknown simulation.')
-                    room = ROOMS[code] = TicTacToeRoom.new(code) if game_type == 'tictactoe' else Room.new(code)
+                    room = ROOMS[code] = TicTacToeRoom.new(code, data.get('mode', 'network')) if game_type == 'tictactoe' else Room.new(code)
                     token = room.join(str(data.get('name', '')))
                     result = {'token': token, 'state': room.snapshot(0)}
                 elif self.path == '/api/join':
@@ -88,7 +88,7 @@ class Handler(SimpleHTTPRequestHandler):
                     else:
                         if index != 0 or room.phase not in ('won', 'draw'):
                             raise ValueError('Host can generate a new maze after a win.')
-                        replacement = TicTacToeRoom.new(room.code) if isinstance(room, TicTacToeRoom) else Room.new(room.code)
+                        replacement = TicTacToeRoom.new(room.code, room.mode) if isinstance(room, TicTacToeRoom) else Room.new(room.code)
                         replacement.players = room.players
                         if isinstance(replacement, Room):
                             for i, player in enumerate(replacement.players):
@@ -97,6 +97,8 @@ class Handler(SimpleHTTPRequestHandler):
                                 player.stunned_until = 0
                         replacement.version = room.version + 1
                         replacement.message = 'New simulation ready. Host may initialize.'
+                        if isinstance(replacement, TicTacToeRoom) and replacement.mode == 'computer':
+                            replacement.start(0)
                         ROOMS[room.code] = room = replacement
                     result = {'state': room.snapshot(index)}
                 else:
